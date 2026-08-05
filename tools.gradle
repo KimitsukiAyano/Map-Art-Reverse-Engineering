@@ -1,0 +1,64 @@
+// Development-only offline verification harness. Applied only with -PrvmapTools,
+// so a plain `./gradlew build` never sees any of it.
+//
+// The yarn-mapped Minecraft jar cannot be used outside a Fabric runtime: yarn splits
+// classes that were flat in the obfuscated jar into real packages, so Minecraft's own
+// package-private calls become illegal cross-package accesses and Bootstrap.initialize()
+// throws IllegalAccessError. `publicizeMinecraft` writes a widened copy once; the probes
+// run against that copy.
+
+sourceSets {
+	tools {
+		java.srcDirs = ['src/tools/java']
+		compileClasspath += sourceSets.main.compileClasspath + sourceSets.main.output
+		runtimeClasspath += sourceSets.main.runtimeClasspath + sourceSets.main.output
+	}
+}
+
+repositories {
+	mavenCentral()
+}
+
+dependencies {
+	toolsImplementation 'org.ow2.asm:asm:9.7.1'
+}
+
+def publicizedJar = layout.buildDirectory.file('probe/minecraft-publicized.jar')
+
+tasks.register('publicizeMinecraft', JavaExec) {
+	description = 'Writes an access-widened copy of the mapped Minecraft jar for the offline probes.'
+	classpath = sourceSets.tools.runtimeClasspath + sourceSets.tools.output
+	mainClass = 'rvmaptools.Publicizer'
+
+	def output = publicizedJar.get().asFile
+
+	doFirst {
+		// The mapped Minecraft jar is whatever Loom put on the compile classpath.
+		def mapped = sourceSets.main.compileClasspath.find { it.name.startsWith('minecraft-merged-') }
+
+		if (mapped == null) {
+			throw new GradleException('Could not find the mapped Minecraft jar on the compile classpath.')
+		}
+
+		output.parentFile.mkdirs()
+		args = [mapped.absolutePath, output.absolutePath]
+	}
+
+	outputs.file(output)
+}
+
+def probeExec = { String name, String main, String describedAs ->
+	tasks.register(name, JavaExec) {
+		description = describedAs
+		dependsOn 'publicizeMinecraft'
+		classpath = files(publicizedJar) + sourceSets.tools.runtimeClasspath + sourceSets.tools.output
+		mainClass = main
+		args = [layout.buildDirectory.dir('probe').get().asFile.absolutePath]
+	}
+}
+
+probeExec('colorProbe', 'rvmaptools.ColorProbe',
+		'Dumps the MapColor swatch PNG and the block -> MapColor id table into build/probe.')
+
+probeExec('schematicSmokeTest', 'rvmaptools.SchematicSmokeTest',
+		'Checks the palette / height map / structure NBT / filename pipeline against real Minecraft classes.')

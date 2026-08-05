@@ -1,0 +1,22 @@
+{
+	"schemaVersion": 1,
+	"id": "rvmap",
+	"version": "${version}",
+	"name": "rvmap",
+	"description": "額縁に飾られた地図を見つめてコマンドを打つと、その地図を 128x128 の PNG やバニラ structure (.nbt) として書き出すクライアント専用MODです。",
+	"authors": [],
+	"contact": {},
+	"license": "MIT",
+	"environment": "client",
+	"entrypoints": {
+		"client": [
+			"com.example.rvmap.RvmapClient"
+		]
+	},
+	"depends": {
+		"fabricloader": ">=${loader_version}",
+		"minecraft": "~${minecraft_version}",
+		"java": ">=21",
+		"fabric-api": "*"
+	}
+}

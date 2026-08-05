@@ -1,0 +1,25 @@
+# gradle
+.gradle/
+build/
+out/
+classes/
+
+# idea
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# eclipse / vscode
+.classpath
+.project
+.settings/
+bin/
+.vscode/
+
+# fabric / loom
+run/
+remappedSrc/
+
+# minecraft / log4j output from the offline probes
+logs/
