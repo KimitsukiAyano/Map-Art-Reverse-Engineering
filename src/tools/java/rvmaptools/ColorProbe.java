@@ -22,7 +22,7 @@ public final class ColorProbe {
 		net.minecraft.SharedConstants.createGameVersion();
 		net.minecraft.Bootstrap.initialize();
 
-		System.out.println("WORLD_VERSION=" + net.minecraft.SharedConstants.getGameVersion().getSaveVersion().getId());
+		System.out.println("WORLD_VERSION=" + net.minecraft.SharedConstants.getGameVersion().dataVersion().id());
 
 		// --- 1) byte order -------------------------------------------------
 		// PALE_GREEN is id 1 (grass). Its MapColor.color field is 0xRRGGBB.
@@ -34,22 +34,13 @@ public final class ColorProbe {
 		}
 
 		// --- 2) swatch PNG -------------------------------------------------
+		// Uses the mod's own conversion, so the picture is proof of what the mod writes.
 		int cell = 16;
 		int rows = 64;
 		BufferedImage img = new BufferedImage(4 * cell, rows * cell, BufferedImage.TYPE_INT_ARGB);
 		for (int id = 0; id < rows; id++) {
 			for (int shade = 0; shade < 4; shade++) {
-				int argb;
-				if (id == 0) {
-					argb = 0;
-				} else {
-					int abgr = MapColor.getRenderColor(id * 4 + shade);
-					int r = abgr & 0xFF;
-					int g = (abgr >> 8) & 0xFF;
-					int b = (abgr >> 16) & 0xFF;
-					int a = (abgr >>> 24) & 0xFF;
-					argb = (a << 24) | (r << 16) | (g << 8) | b;
-				}
+				int argb = com.example.rvmap.MapColors.toArgb((byte) (id * 4 + shade));
 				for (int dy = 0; dy < cell; dy++) {
 					for (int dx = 0; dx < cell; dx++) {
 						img.setRGB(shade * cell + dx, id * cell + dy, argb);
@@ -76,10 +67,23 @@ public final class ColorProbe {
 			if (mc == null) continue;
 			sb.append(mc.id).append('\t')
 			  .append(Registries.BLOCK.getId(block)).append('\t')
-			  .append(state.isOpaqueFullCube(EmptyBlockView.INSTANCE, BlockPos.ORIGIN)).append('\t')
+			  .append(state.isOpaqueFullCube()).append('\t')
 			  .append(String.format("0x%06X", mc.color)).append('\n');
 		}
 		java.nio.file.Files.writeString(new File(outDir, "blocks_by_mapcolor.tsv").toPath(), sb.toString());
 		System.out.println("wrote blocks_by_mapcolor.tsv");
+
+		// --- 4) what the shipped block list resolves to ----------------------
+		System.out.println();
+		System.out.println("--- default block list -> colour id ---");
+		com.example.rvmap.PaletteConfig.GenerationResult generated = com.example.rvmap.PaletteConfig.generate();
+
+		for (com.example.rvmap.PaletteConfig.Assignment assignment : generated.assignments()) {
+			System.out.println("  " + com.example.rvmap.PaletteReport.line(assignment));
+		}
+
+		System.out.println("resolved colours: " + generated.palette().size()
+				+ " / unused: " + generated.unused()
+				+ " / missing 1..61: " + generated.missingColorIds());
 	}
 }

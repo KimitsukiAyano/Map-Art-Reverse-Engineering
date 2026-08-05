@@ -2,8 +2,7 @@ package rvmaptools;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.LinkedHashMap;
-import java.util.Map;
+import java.util.List;
 
 import com.example.rvmap.MapColors;
 import com.example.rvmap.MapImageWriter;
@@ -14,7 +13,6 @@ import com.example.rvmap.StructureNbtWriter;
 import net.minecraft.block.BlockState;
 import net.minecraft.command.argument.BlockArgumentParser;
 import net.minecraft.nbt.NbtCompound;
-import net.minecraft.nbt.NbtElement;
 import net.minecraft.nbt.NbtIo;
 import net.minecraft.nbt.NbtList;
 import net.minecraft.nbt.NbtSizeTracker;
@@ -22,7 +20,8 @@ import net.minecraft.registry.Registries;
 
 /**
  * Development-only smoke test. Not shipped in the mod jar.
- * Exercises the palette -> height map -> vanilla structure NBT pipeline against real Minecraft classes.
+ * Exercises palette generation -> validation -> height map -> vanilla structure NBT against real
+ * Minecraft classes, then reads the result back through vanilla's own structure reader.
  */
 public final class SchematicSmokeTest {
 	private static int failures = 0;
@@ -34,31 +33,77 @@ public final class SchematicSmokeTest {
 		Path outDir = Path.of(args.length > 0 ? args[0] : "build/probe");
 		Files.createDirectories(outDir);
 
-		// --- every default palette entry must actually carry the colour id it is filed under ---
-		Map<Integer, BlockState> states = new LinkedHashMap<>();
+		System.out.println("game " + net.minecraft.SharedConstants.getGameVersion().name()
+				+ " / DataVersion " + net.minecraft.SharedConstants.getGameVersion().dataVersion().id());
 
-		for (Map.Entry<Integer, String> entry : PaletteConfig.defaultPalette().entrySet()) {
-			BlockState state = BlockArgumentParser
-					.block(Registries.BLOCK.getReadOnlyWrapper(), entry.getValue(), false)
-					.blockState();
+		// --- palette generation from the registry ----------------------------
+		PaletteConfig.GenerationResult generated = PaletteConfig.generate();
+
+		check(generated.assignments().size() == PaletteConfig.DEFAULT_BLOCKS.size(),
+				"every shipped block id produced an assignment");
+		check(generated.assignments().stream().noneMatch(PaletteConfig.Assignment::failed),
+				"every shipped block id resolves in this version");
+
+		for (PaletteConfig.Assignment assignment : generated.assignments()) {
+			if (assignment.failed()) {
+				continue;
+			}
+
+			BlockState state = parse(assignment.blockId());
 			int actual = PaletteConfig.mapColorId(state);
-			check(actual == entry.getKey(),
-					"default palette " + entry.getKey() + " -> " + entry.getValue() + " (actual id " + actual + ")");
-			states.put(entry.getKey(), state);
+			check(actual == assignment.colorId(),
+					"assignment reports the registry's colour id for " + assignment.blockId()
+							+ " (said " + assignment.colorId() + ", registry says " + actual + ")");
+
+			if (assignment.accepted()) {
+				check(assignment.blockId().equals(generated.palette().get(assignment.colorId())),
+						assignment.blockId() + " owns colour id " + assignment.colorId());
+				check(!generated.unused().containsKey(assignment.blockId()),
+						assignment.blockId() + " is not parked in unused");
+			} else {
+				// collision: the winner must be the block already holding that colour
+				check(assignment.collidesWith() != null
+								&& assignment.collidesWith().equals(generated.palette().get(assignment.colorId())),
+						"collision on colour id " + assignment.colorId() + " names the winner");
+				check(generated.unused().containsKey(assignment.blockId()),
+						assignment.blockId() + " is parked in unused");
+			}
 		}
 
-		BlockState noob = BlockArgumentParser
-				.block(Registries.BLOCK.getReadOnlyWrapper(), PaletteConfig.DEFAULT_NOOB_LINE, false)
-				.blockState();
-		PaletteConfig palette = PaletteConfig.of(states, noob);
+		check(generated.palette().size() + generated.unused().size() == PaletteConfig.DEFAULT_BLOCKS.size(),
+				"accepted + unused accounts for the whole list");
 
-		// --- height maps ---------------------------------------------------
+		for (int id = PaletteConfig.EXPECTED_MIN_COLOR_ID; id <= PaletteConfig.EXPECTED_MAX_COLOR_ID; id++) {
+			boolean present = generated.palette().containsKey(id);
+			boolean reportedMissing = generated.missingColorIds().contains(id);
+			check(present != reportedMissing, "colour id " + id + " is either mapped or reported missing");
+		}
+
+		System.out.println("  -> " + generated.palette().size() + " colours mapped, "
+				+ generated.unused().size() + " parked, missing " + generated.missingColorIds());
+
+		// --- the generated json must survive its own validator ----------------
+		PaletteConfig.LoadResult loaded = PaletteConfig.validate(PaletteConfig.toJson(generated), null);
+		check(loaded.ok(), "generated palette.json validates: " + loaded.errors());
+		PaletteConfig palette = loaded.config();
+		check(palette.blocks().size() == generated.palette().size(), "all generated entries survive validation");
+		check(palette.unused().equals(generated.unused()), "unused section round-trips");
+		check(PaletteConfig.mapColorId(palette.noobLine()) == PaletteConfig.mapColorId(parse(PaletteConfig.DEFAULT_NOOB_LINE)),
+				"default noob line round-trips");
+		check(palette.missingColorIds().equals(generated.missingColorIds()),
+				"loaded config reports the same missing ids");
+
+		// pick a colour the generated palette actually covers, so the test does not
+		// hardcode a colour id that could move between versions
+		int paintId = palette.colorIds().first();
+		String paintBlock = StructureNbtWriter.describe(palette.blocks().get(paintId));
+		System.out.println("  using colour id " + paintId + " (" + paintBlock + ") for the height tests");
+
+		// --- height maps ------------------------------------------------------
 		// column 0: all shade 2 (staircase up going south) -> heights 0..128
 		// column 1: all shade 1 (flat)                     -> heights all 0
 		// column 2: all shade 0 (staircase down)           -> normalised to 128..0
-		// column 3: alternating 2/0                        -> saw tooth
 		byte[] colors = new byte[128 * 128];
-		int white = 8; // white_wool
 
 		for (int z = 0; z < 128; z++) {
 			for (int x = 0; x < 128; x++) {
@@ -69,7 +114,7 @@ public final class SchematicSmokeTest {
 					case 3 -> (z % 2 == 0) ? 2 : 0;
 					default -> 1;
 				};
-				colors[x + z * 128] = (byte) (white * 4 + shade);
+				colors[x + z * 128] = (byte) (paintId * 4 + shade);
 			}
 		}
 
@@ -82,13 +127,9 @@ public final class SchematicSmokeTest {
 		check(result.tallestColumnX() == 0 || result.tallestColumnX() == 2,
 				"tallest column is one of the full staircases (was x=" + result.tallestColumnX() + ")");
 		check(result.transparentPixels() == 0, "no transparent pixels");
-		check(result.undefinedColorIds().isEmpty(), "no undefined colour ids");
-
-		// 128*129 placements: every pixel plus the noob line, nothing dropped
 		check(result.placements().size() == 128 * 129,
 				"one block per cell (was " + result.placements().size() + ")");
 
-		Map<String, Integer> byColumn = new LinkedHashMap<>();
 		int[] col0 = new int[129];
 		int[] col1 = new int[129];
 		int[] col2 = new int[129];
@@ -102,70 +143,84 @@ public final class SchematicSmokeTest {
 		check(col0[0] == 0 && col0[128] == 128, "shade-2 column climbs 0 -> 128 going south");
 		check(col1[0] == 0 && col1[128] == 0, "shade-1 column stays flat");
 		check(col2[0] == 128 && col2[128] == 0, "shade-0 column normalised to 128 -> 0");
-		byColumn.clear();
 
-		// noob line must exist at every x, at z = 0
 		long noobCount = result.placements().stream().filter(p -> p.z() == 0).count();
 		check(noobCount == 128, "noob line spans the whole width (was " + noobCount + ")");
-		check(result.blockCounts().getOrDefault("minecraft:stone", 0) == 128,
-				"noob line counted as 128 stone");
+		check(result.blockCounts().getOrDefault(StructureNbtWriter.describe(palette.noobLine()), 0) >= 128,
+				"noob line contributes 128 blocks to the material count");
 
-		// --- shade 3 must abort --------------------------------------------
+		// --- shade 3 must abort ----------------------------------------------
 		byte[] withDeepWater = colors.clone();
-		withDeepWater[5 + 7 * 128] = (byte) (12 * 4 + 3);
-		boolean aborted = false;
+		withDeepWater[5 + 7 * 128] = (byte) (paintId * 4 + 3);
+		boolean shadeAborted = false;
 
 		try {
 			SchematicBuilder.build(withDeepWater, palette);
 		} catch (SchematicBuilder.UnsupportedShadeException e) {
-			aborted = e.pixelX() == 5 && e.pixelZ() == 7;
+			shadeAborted = e.pixelX() == 5 && e.pixelZ() == 7;
 		}
 
-		check(aborted, "shade 3 aborts and reports the pixel");
+		check(shadeAborted, "shade 3 aborts and reports the pixel");
 
-		// --- transparent + undefined reporting ------------------------------
-		byte[] mixed = colors.clone();
-		mixed[10 + 10 * 128] = 0;                    // colour id 0 -> air
-		mixed[11 + 10 * 128] = (byte) (3 * 4 + 1);   // mushroom_stem, present in default palette
-		Map<Integer, BlockState> partial = new LinkedHashMap<>(states);
-		partial.remove(3);
-		SchematicBuilder.Result mixedResult =
-				SchematicBuilder.build(mixed, PaletteConfig.of(partial, noob));
-		check(mixedResult.transparentPixels() == 1, "one transparent pixel counted");
-		check(mixedResult.undefinedColorIds().equals(java.util.List.of(3)),
-				"undefined colour id 3 reported (was " + mixedResult.undefinedColorIds() + ")");
-		check(mixedResult.placements().size() == 128 * 129 - 2,
-				"air and undefined cells produce no block (was " + mixedResult.placements().size() + ")");
+		// --- an unmapped colour must abort and name the colour id --------------
+		int spareId = palette.colorIds().last();
+		check(spareId != paintId, "test needs two distinct mapped colours");
 
-		// --- write the structure and read it back ---------------------------
+		String restrictedJson = "{\"" + PaletteConfig.NOOB_LINE_KEY + "\": \"" + PaletteConfig.DEFAULT_NOOB_LINE
+				+ "\", \"" + paintId + "\": \"" + generated.palette().get(paintId) + "\"}";
+		PaletteConfig restricted = PaletteConfig.validate(restrictedJson, null).config();
+		check(restricted != null, "restricted palette parses");
+
+		byte[] withUnmapped = colors.clone();
+		withUnmapped[20 + 30 * 128] = (byte) (spareId * 4 + 1);
+		List<Integer> reported = null;
+
+		try {
+			SchematicBuilder.build(withUnmapped, restricted);
+		} catch (SchematicBuilder.UndefinedColorException e) {
+			reported = e.colorIds();
+		}
+
+		check(reported != null && reported.equals(List.of(spareId)),
+				"unmapped colour aborts the build and reports id " + spareId + " (was " + reported + ")");
+
+		// --- transparent pixels are air, not an abort --------------------------
+		byte[] withHole = colors.clone();
+		withHole[10 + 10 * 128] = 0;
+		SchematicBuilder.Result holed = SchematicBuilder.build(withHole, palette);
+		check(holed.transparentPixels() == 1, "one transparent pixel counted");
+		check(holed.placements().size() == 128 * 129 - 1,
+				"the transparent cell produces no block (was " + holed.placements().size() + ")");
+
+		// --- write the structure and read it back ------------------------------
 		Path nbtFile = outDir.resolve("smoketest.nbt");
 		StructureNbtWriter.write(result, nbtFile);
 		NbtCompound root = NbtIo.readCompressed(nbtFile, NbtSizeTracker.ofUnlimitedBytes());
 
-		NbtList size = root.getList("size", NbtElement.INT_TYPE);
+		NbtList size = root.getListOrEmpty("size");
 		check(size.size() == 3, "size is a 3-element int list");
-		check(size.getInt(0) == 128 && size.getInt(1) == 129 && size.getInt(2) == 129,
-				"size == [128, 129, 129] (was [" + size.getInt(0) + ", " + size.getInt(1) + ", " + size.getInt(2) + "])");
+		check(size.getInt(0, -1) == 128 && size.getInt(1, -1) == 129 && size.getInt(2, -1) == 129,
+				"size == [128, 129, 129] (was [" + size.getInt(0, -1) + ", " + size.getInt(1, -1)
+						+ ", " + size.getInt(2, -1) + "])");
 
-		NbtList paletteList = root.getList("palette", NbtElement.COMPOUND_TYPE);
+		NbtList paletteList = root.getListOrEmpty("palette");
 		check(paletteList.size() == 2, "palette holds only the blocks actually used (was " + paletteList.size() + ")");
-		check(root.contains("DataVersion", NbtElement.INT_TYPE), "DataVersion present");
-		check(root.getInt("DataVersion") == net.minecraft.SharedConstants.getGameVersion().getSaveVersion().getId(),
+		check(root.contains("DataVersion"), "DataVersion present");
+		check(root.getInt("DataVersion", -1) == net.minecraft.SharedConstants.getGameVersion().dataVersion().id(),
 				"DataVersion matches the running game");
-		check(root.contains("entities", NbtElement.LIST_TYPE), "entities list present");
+		check(root.contains("entities"), "entities list present");
 
-		NbtList blocks = root.getList("blocks", NbtElement.COMPOUND_TYPE);
+		NbtList blocks = root.getListOrEmpty("blocks");
 		check(blocks.size() == 128 * 129, "one blocks entry per placement (was " + blocks.size() + ")");
 
-		NbtCompound first = blocks.getCompound(0);
-		check(first.getList("pos", NbtElement.INT_TYPE).size() == 3, "block pos is a 3-element int list");
-		check(first.contains("state", NbtElement.INT_TYPE), "block state index present");
+		NbtCompound first = blocks.getCompoundOrEmpty(0);
+		check(first.getListOrEmpty("pos").size() == 3, "block pos is a 3-element int list");
+		check(first.contains("state"), "block state index present");
 
-		// every state index must be inside the palette
 		boolean indicesOk = true;
 
 		for (int i = 0; i < blocks.size(); i++) {
-			int state = blocks.getCompound(i).getInt("state");
+			int state = blocks.getCompoundOrEmpty(i).getInt("state", -1);
 
 			if (state < 0 || state >= paletteList.size()) {
 				indicesOk = false;
@@ -175,27 +230,31 @@ public final class SchematicSmokeTest {
 
 		check(indicesOk, "every state index is inside the palette");
 
-		// palette entries must round-trip through NbtHelper
-		String firstName = paletteList.getCompound(0).getString("Name");
+		String firstName = paletteList.getCompoundOrEmpty(0).getString("Name", "");
 		check(firstName.startsWith("minecraft:"), "palette entry carries a namespaced Name (was " + firstName + ")");
-
-		System.out.println("gzip-compressed: " + isGzip(nbtFile));
 		check(isGzip(nbtFile), "output is gzip compressed");
 
 		// The strongest compatibility check available offline: hand the file back to
 		// vanilla's own structure reader. Litematica reads the same schema.
 		net.minecraft.structure.StructureTemplate template = new net.minecraft.structure.StructureTemplate();
-		template.readNbt(Registries.BLOCK.getReadOnlyWrapper(), root);
+		template.readNbt(Registries.BLOCK, root);
 		net.minecraft.util.math.Vec3i templateSize = template.getSize();
 		check(templateSize.getX() == 128 && templateSize.getY() == 129 && templateSize.getZ() == 129,
 				"vanilla StructureTemplate reads it back with size " + templateSize);
 
-		// --- PNG round trip --------------------------------------------------
+		// --- PNG round trip -----------------------------------------------------
+		// Colour ids 4 / 12 / 8 are red / blue / white in vanilla; assert against the
+		// registry rather than against remembered constants.
+		int redId = 4;
+		int blueId = 12;
+		check(net.minecraft.block.MapColor.get(redId).color == 0xFF0000, "colour id 4 is pure red in this version");
+		check(net.minecraft.block.MapColor.get(blueId).color == 0x4040FF, "colour id 12 is water blue in this version");
+
 		byte[] colourful = new byte[128 * 128];
 
 		for (int z = 0; z < 128; z++) {
 			for (int x = 0; x < 128; x++) {
-				int id = (z < 32) ? 4 : (z < 64) ? 12 : (z < 96) ? 8 : 0; // red, blue, white, transparent
+				int id = (z < 32) ? redId : (z < 64) ? blueId : (z < 96) ? 8 : 0;
 				colourful[x + z * 128] = (byte) (id * 4 + 2);
 			}
 		}
@@ -203,47 +262,50 @@ public final class SchematicSmokeTest {
 		Path png = outDir.resolve("smoketest.png");
 		MapImageWriter.writePng(colourful, png);
 		java.awt.image.BufferedImage image = javax.imageio.ImageIO.read(png.toFile());
-		check(image.getRGB(0, 0) == 0xFFFF0000, String.format("red row is 0xFFFF0000 (was 0x%08X)", image.getRGB(0, 0)));
-		check(image.getRGB(0, 40) == 0xFF4040FF, String.format("blue row is 0xFF4040FF (was 0x%08X)", image.getRGB(0, 40)));
+		check(image.getRGB(0, 0) == 0xFFFF0000,
+				String.format("red row is 0xFFFF0000, red and blue not swapped (was 0x%08X)", image.getRGB(0, 0)));
+		check(image.getRGB(0, 40) == 0xFF4040FF,
+				String.format("blue row is 0xFF4040FF (was 0x%08X)", image.getRGB(0, 40)));
 		check((image.getRGB(0, 120) >>> 24) == 0, "transparent row has alpha 0");
 		check(MapColors.baseColorId((byte) (13 * 4 + 2)) == 13, "baseColorId unpacks correctly");
 		check(MapColors.shade((byte) (13 * 4 + 2)) == 2, "shade unpacks correctly");
 
-		// --- palette.json validation ----------------------------------------
-		PaletteConfig.LoadResult good = PaletteConfig.validate(PaletteConfig.defaultJson(), false);
-		check(good.ok(), "generated default palette.json validates: " + good.errors());
-		check(good.config().blocks().size() == PaletteConfig.defaultPalette().size(),
-				"all default entries survive validation");
-		check(PaletteConfig.mapColorId(good.config().noobLine()) == 11, "default noob line is stone (colour id 11)");
-
-		// sand is colour id 2, so filing it under 13 must be rejected with a concrete message
+		// --- palette.json validation edge cases ---------------------------------
+		// file a block under a colour id that is not its own -> concrete rejection
+		String wrongId = String.valueOf(paintId == 1 ? 2 : 1);
+		String culprit = generated.palette().get(paintId);
 		PaletteConfig.LoadResult wrong =
-				PaletteConfig.validate("{\"13\": \"minecraft:sand\"}", false);
+				PaletteConfig.validate("{\"" + wrongId + "\": \"" + culprit + "\"}", null);
 		check(!wrong.ok(), "mismatched colour id is rejected");
-		check(wrong.errors().size() == 1 && wrong.errors().get(0).contains("色ID 13")
-						&& wrong.errors().get(0).contains("実際には色ID 2"),
+		check(wrong.errors().size() == 1
+						&& wrong.errors().get(0).contains("色ID " + wrongId)
+						&& wrong.errors().get(0).contains("実際には色ID " + paintId),
 				"mismatch message names both ids: " + wrong.errors());
 
-		check(!PaletteConfig.validate("{\"13\": \"minecraft:not_a_block\"}", false).ok(),
+		check(!PaletteConfig.validate("{\"13\": \"minecraft:not_a_block\"}", null).ok(),
 				"unknown block id is rejected");
-		check(!PaletteConfig.validate("{\"13\": \"minecraft:white_wool[nope=1]\"}", false).ok(),
+		check(!PaletteConfig.validate("{\"13\": \"minecraft:white_wool[nope=1]\"}", null).ok(),
 				"unknown blockstate property is rejected");
-		check(!PaletteConfig.validate("{\"999\": \"minecraft:white_wool\"}", false).ok(),
+		check(!PaletteConfig.validate("{\"999\": \"minecraft:white_wool\"}", null).ok(),
 				"out-of-range colour id is rejected");
-		check(!PaletteConfig.validate("{\"0\": \"minecraft:white_wool\"}", false).ok(),
+		check(!PaletteConfig.validate("{\"0\": \"minecraft:white_wool\"}", null).ok(),
 				"colour id 0 is rejected");
-		check(!PaletteConfig.validate("{\"abc\": \"minecraft:white_wool\"}", false).ok(),
+		check(!PaletteConfig.validate("{\"abc\": \"minecraft:white_wool\"}", null).ok(),
 				"non-numeric key is rejected");
-		check(!PaletteConfig.validate("[]", false).ok(), "non-object json is rejected");
-		check(PaletteConfig.validate("{\"_comment\": \"hi\", \"8\": \"minecraft:white_wool\"}", false).ok(),
+		check(!PaletteConfig.validate("[]", null).ok(), "non-object json is rejected");
+		check(PaletteConfig.validate("{\"_comment\": \"hi\"}", null).ok(),
 				"underscore keys are treated as comments");
+		check(PaletteConfig.validate("{\"" + PaletteConfig.UNUSED_KEY + "\": {\"minecraft:tnt\": 4}}", null).ok(),
+				"palette_unused is not validated as a colour mapping");
 
-		PaletteConfig.LoadResult customNoob =
-				PaletteConfig.validate("{\"noob_line\": \"minecraft:black_wool\"}", false);
-		check(customNoob.ok() && PaletteConfig.mapColorId(customNoob.config().noobLine()) == 29,
+		PaletteConfig.LoadResult customNoob = PaletteConfig.validate(
+				"{\"" + PaletteConfig.NOOB_LINE_KEY + "\": \"minecraft:black_wool\"}", null);
+		check(customNoob.ok()
+						&& PaletteConfig.mapColorId(customNoob.config().noobLine())
+						== PaletteConfig.mapColorId(parse("minecraft:black_wool")),
 				"noob_line is configurable");
 
-		// --- filename sanitising ---------------------------------------------
+		// --- filename sanitising -------------------------------------------------
 		checkName("../../../etc/passwd", "passwd.png");
 		checkName("..\\..\\windows\\system32\\evil", "evil.png");
 		checkName("..", "FALLBACK.png");
@@ -265,6 +327,10 @@ public final class SchematicSmokeTest {
 		}
 	}
 
+	private static BlockState parse(String blockId) throws Exception {
+		return BlockArgumentParser.block(Registries.BLOCK, blockId, false).blockState();
+	}
+
 	private static boolean isGzip(Path file) throws Exception {
 		byte[] head = new byte[2];
 
@@ -279,9 +345,10 @@ public final class SchematicSmokeTest {
 	}
 
 	private static void check(boolean condition, String what) {
-		System.out.println((condition ? "  ok   " : "  FAIL ") + what);
-
-		if (!condition) {
+		if (condition) {
+			System.out.println("  ok   " + what);
+		} else {
+			System.out.println("  FAIL " + what);
 			failures++;
 		}
 	}

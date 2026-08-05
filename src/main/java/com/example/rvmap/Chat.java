@@ -57,8 +57,8 @@ public final class Chat {
 		MutableText link = Text.literal(relative)
 				.formatted(Formatting.GREEN, Formatting.UNDERLINE)
 				.styled(style -> style
-						.withClickEvent(new ClickEvent(ClickEvent.Action.OPEN_FILE, folder.toString()))
-						.withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
+						.withClickEvent(new ClickEvent.OpenFile(folder))
+						.withHoverEvent(new HoverEvent.ShowText(
 								Text.literal("クリックでフォルダを開く: " + folder))));
 
 		source.sendFeedback(Text.literal(PREFIX + "保存しました: ").formatted(Formatting.GREEN).append(link));

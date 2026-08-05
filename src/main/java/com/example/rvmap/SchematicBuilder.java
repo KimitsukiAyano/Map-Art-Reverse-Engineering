@@ -41,8 +41,6 @@ public final class SchematicBuilder {
 			int maxY,
 			/** 最も高くなった列の x 座標。 */
 			int tallestColumnX,
-			/** パレットに定義が無かった基本色IDの一覧。 */
-			List<Integer> undefinedColorIds,
 			/** 基本色ID 0(未探索/透明)のピクセル数。 */
 			int transparentPixels) {
 	}
@@ -68,7 +66,22 @@ public final class SchematicBuilder {
 		}
 	}
 
-	public static Result build(byte[] colors, PaletteConfig palette) throws UnsupportedShadeException {
+	/** パレットに載っていない基本色IDが地図に出現したときに投げる。 */
+	public static final class UndefinedColorException extends Exception {
+		private final List<Integer> colorIds;
+
+		public UndefinedColorException(List<Integer> colorIds) {
+			super("未定義の基本色ID: " + colorIds);
+			this.colorIds = colorIds;
+		}
+
+		public List<Integer> colorIds() {
+			return colorIds;
+		}
+	}
+
+	public static Result build(byte[] colors, PaletteConfig palette)
+			throws UnsupportedShadeException, UndefinedColorException {
 		final int width = Rvmap.MAP_SIZE;
 		final int depth = width + 1; // ヌーブライン 1 行を北端に足す
 
@@ -106,6 +119,12 @@ public final class SchematicBuilder {
 					default -> heights[x][z - 1] - 1;
 				};
 			}
+		}
+
+		// 対応するブロックが無い色が 1 つでもあれば、その色のピクセルを置けない。
+		// 像が崩れるだけなので、ここで中止して色IDを報告する。
+		if (!undefined.isEmpty()) {
+			throw new UndefinedColorException(List.copyOf(undefined));
 		}
 
 		// 列ごとに平行移動して最低高さを 0 に合わせる。
@@ -148,12 +167,8 @@ public final class SchematicBuilder {
 					continue; // 空気
 				}
 
+				// 未定義の色は上でまとめて弾いているので、ここに来る色は必ず対応表にある。
 				BlockState state = palette.blocks().get(colorId);
-
-				if (state == null) {
-					continue; // 未定義。呼び出し側で警告する。
-				}
-
 				placements.add(new Placement(x, heights[x][z], z, state));
 				count(counts, state);
 			}
@@ -167,7 +182,6 @@ public final class SchematicBuilder {
 				counts,
 				maxY,
 				tallestColumnX,
-				List.copyOf(undefined),
 				transparentPixels);
 	}
 

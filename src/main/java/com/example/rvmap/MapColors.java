@@ -7,16 +7,24 @@ import net.minecraft.block.MapColor;
  *
  * <p>色テーブルは一切ハードコードせず、バニラの {@link MapColor#getRenderColor(int)} を使う。
  *
- * <p><b>バイト順について。</b> 1.21.1 の {@code MapColor#getRenderColor(Brightness)} は
+ * <p><b>バイト順について。</b> ここは 1.21.1 から 1.21.11 の間で変わった箇所なので注意。
+ * 1.21.1 の {@code MapColor#getRenderColor(Brightness)} は
  * <pre>
- *   return 0xFF000000 | (b &lt;&lt; 16) | (g &lt;&lt; 8) | r;
+ *   return 0xFF000000 | (b &lt;&lt; 16) | (g &lt;&lt; 8) | r;   // ABGR(最下位バイトが赤)
  * </pre>
- * を返す。つまり戻り値は <b>ABGR</b>(最下位バイトが赤)で、NativeImage が期待する並びである。
- * BufferedImage の {@code TYPE_INT_ARGB} は ARGB なので、赤と青を入れ替える必要がある。
- * 実際に 1.21.1 のマッピング済み jar 上で確認した値:
+ * を返していたが、1.21.11 では {@code ColorHelper} 経由になり
  * <pre>
- *   id= 4 (BRIGHT_RED)  color=0xFF0000  getRenderColor(18) = 0xFF0000FF
- *   id=12 (WATER_BLUE)  color=0x4040FF  getRenderColor(50) = 0xFFFF4040
+ *   return ColorHelper.scaleRgb(ColorHelper.fullAlpha(this.color), brightness.brightness);
+ * </pre>
+ * となった。{@code fullAlpha} は {@code color | 0xFF000000} で、{@code color} は 0xRRGGBB。
+ * {@code scaleRgb} は {@code ColorHelper.getRed}(ビット 16〜23)などで分解して
+ * {@code getArgb} で組み直すだけなので、<b>戻り値は ARGB</b> になる。
+ * つまり <b>1.21.11 では赤と青の入れ替えは不要</b>。
+ *
+ * <p>1.21.11 のマッピング済み jar 上で実際に確認した値:
+ * <pre>
+ *   id= 4 (BRIGHT_RED)  color=0xFF0000  getRenderColor(18) = 0xFFFF0000
+ *   id=12 (WATER_BLUE)  color=0x4040FF  getRenderColor(50) = 0xFF4040FF
  * </pre>
  */
 public final class MapColors {
@@ -42,13 +50,7 @@ public final class MapColors {
 			return 0;
 		}
 
-		int abgr = MapColor.getRenderColor(packed & 0xFF);
-
-		int a = (abgr >>> 24) & 0xFF;
-		int b = (abgr >> 16) & 0xFF;
-		int g = (abgr >> 8) & 0xFF;
-		int r = abgr & 0xFF;
-
-		return (a << 24) | (r << 16) | (g << 8) | b;
+		// 1.21.11 の getRenderColor は既に ARGB。入れ替えはしない。
+		return MapColor.getRenderColor(packed & 0xFF);
 	}
 }

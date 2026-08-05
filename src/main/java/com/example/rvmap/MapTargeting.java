@@ -106,7 +106,7 @@ public final class MapTargeting {
 		}
 
 		// 視線を遮るブロックがあれば、そこより手前の額縁だけを採用する。
-		BlockHitResult blockHit = camera.getWorld().raycast(new RaycastContext(
+		BlockHitResult blockHit = camera.getEntityWorld().raycast(new RaycastContext(
 				start, end,
 				RaycastContext.ShapeType.COLLIDER,
 				RaycastContext.FluidHandling.NONE,
