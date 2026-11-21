@@ -1,0 +1,19 @@
+{
+	"schemaVersion": 1,
+	"id": "oresim",
+	"version": "${version}",
+	"name": "OreSim",
+	"description": "ワールドシードからバニラの鉱石生成を再計算し、鉱石の位置を表示するクライアント専用MOD。",
+	"authors": ["oresim"],
+	"license": "MIT",
+	"environment": "client",
+	"entrypoints": {
+		"client": ["com.example.oresim.OreSimClient"]
+	},
+	"depends": {
+		"fabricloader": ">=${loader_version}",
+		"minecraft": "~${minecraft_version}",
+		"java": ">=25",
+		"fabric-api": "*"
+	}
+}

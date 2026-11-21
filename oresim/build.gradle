@@ -1,0 +1,58 @@
+plugins {
+	id 'net.fabricmc.fabric-loom' version "${loom_version}"
+	id 'java'
+}
+
+version = project.mod_version
+group = project.maven_group
+base { archivesName = project.archives_base_name }
+
+dependencies {
+	minecraft "com.mojang:minecraft:${project.minecraft_version}"
+	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+}
+
+processResources {
+	def expansions = [version: project.version.toString(), minecraft_version: project.minecraft_version, loader_version: project.loader_version]
+	inputs.properties expansions
+	filesMatching('fabric.mod.json') { expand expansions }
+}
+
+tasks.withType(JavaCompile).configureEach {
+	it.options.release = 25
+	it.options.encoding = 'UTF-8'
+}
+
+java {
+	sourceCompatibility = JavaVersion.VERSION_25
+	targetCompatibility = JavaVersion.VERSION_25
+}
+
+// ---- Dev-only verification: `./gradlew runVerify` generates a real world and compares it
+// against the simulation block by block. Not part of the released jar.
+sourceSets {
+	testmod {
+		compileClasspath += sourceSets.main.compileClasspath + sourceSets.main.output
+		runtimeClasspath += sourceSets.main.runtimeClasspath + sourceSets.main.output
+	}
+}
+
+loom {
+	runs {
+		verify {
+			server()
+			name = 'OreSim verify'
+			source sourceSets.testmod
+			runDir = 'run-verify'
+			programArgs '--nogui'
+		}
+		verifyClient {
+			client()
+			name = 'OreSim client check'
+			source sourceSets.testmod
+			runDir = 'run-verify-client'
+			programArgs '--quickPlaySingleplayer', 'test'
+		}
+	}
+}
