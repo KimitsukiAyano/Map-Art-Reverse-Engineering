@@ -34,7 +34,11 @@ public final class OreSimClientCheck implements ClientModInitializer {
 				server(mc, "time set noon");
 				server(mc, "tp @a 8 12 8 30 35");
 			}
-			case 60 -> mc.player.connection.sendCommand("oresim");
+			case 60 -> {
+				mc.player.connection.sendCommand("oresim range " + Integer.getInteger("oresim.check.range", 5));
+				mc.player.connection.sendCommand("oresim maxboxes " + Integer.getInteger("oresim.check.maxboxes", 20000));
+			}
+			case 399 -> LOG.info("CHECK avg tick {} ms", mc.getSingleplayerServer() != null ? String.format("%.2f", mc.getFps() > 0 ? 1000.0 / mc.getFps() : -1) : "?");
 			case 400 -> {
 				mc.player.connection.sendCommand("oresim");
 				Screenshot.grab(mc.gameDirectory, mc.gameRenderer.mainRenderTarget(), c -> LOG.info("CHECK screenshot: {}", c.getString()));

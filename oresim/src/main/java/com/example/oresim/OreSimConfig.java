@@ -21,6 +21,7 @@ final class OreSimConfig {
 	Map<String, Long> seeds = new LinkedHashMap<>();
 	Set<String> ores = new LinkedHashSet<>();
 	int range = 5;
+	int maxBoxes = 20000;
 	boolean enabled = true;
 	boolean hideAir = true;
 	boolean throughWalls = true;
@@ -50,7 +51,9 @@ final class OreSimConfig {
 
 		if (config.seeds == null) config.seeds = new LinkedHashMap<>();
 		if (config.ores == null) config.ores = new LinkedHashSet<>();
-		config.range = Math.clamp(config.range, 1, 32);
+		config.range = Math.clamp(config.range, 1, OreSimClient.MAX_RANGE);
+		if (config.maxBoxes <= 0) config.maxBoxes = 20000;
+		config.maxBoxes = Math.clamp(config.maxBoxes, 100, OreSimClient.MAX_BOXES_LIMIT);
 		config.syncOres();
 		return config;
 	}

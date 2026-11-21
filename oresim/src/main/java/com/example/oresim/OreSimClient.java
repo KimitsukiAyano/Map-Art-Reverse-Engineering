@@ -17,6 +17,7 @@ import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallba
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
+import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -37,8 +38,10 @@ import org.slf4j.LoggerFactory;
 public final class OreSimClient implements ClientModInitializer {
 	public static final Logger LOGGER = LoggerFactory.getLogger("oresim");
 
-	/** Upper bound on boxes drawn per tick, nearest first. */
-	private static final int MAX_BOXES = 6000;
+	/** Largest settable radius in chunks. Only chunks the client has loaded are ever simulated. */
+	static final int MAX_RANGE = 128;
+	/** Largest settable cap on boxes drawn per tick (nearest first). */
+	static final int MAX_BOXES_LIMIT = 300_000;
 	/** Main-thread time budget per tick for simulating new chunks. */
 	private static final long BUDGET_NANOS = 6_000_000L;
 
@@ -58,6 +61,7 @@ public final class OreSimClient implements ClientModInitializer {
 		ClientCommandRegistrationCallback.EVENT.register((dispatcher, context) -> registerCommands(dispatcher));
 		ClientTickEvents.END_CLIENT_TICK.register(OreSimClient::tick);
 		ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> reset());
+		LevelRenderEvents.END_MAIN.register(context -> frameSinceSubmit = true);
 		// Warm the vanilla worldgen registries up in the background so the first use is instant.
 		CompletableFuture.runAsync(() -> {
 			try {
@@ -89,6 +93,7 @@ public final class OreSimClient implements ClientModInitializer {
 
 	private static void reset() {
 		cache.clear();
+		visible = List.of();
 		simulator = null;
 		simDimension = null;
 		pending = null;
@@ -203,36 +208,27 @@ public final class OreSimClient implements ClientModInitializer {
 		});
 	}
 
+	/** Boxes to draw, rebuilt every few ticks so wide ranges do not sort every tick. */
+	private static List<OreSimulator.Hit> visible = List.of();
+	private static int drawTicks;
+
+	/**
+	 * Set by the renderer every frame. When the client lags it runs up to ten ticks per frame
+	 * and keeps every gizmo submitted in them, so boxes are only submitted on the first tick
+	 * after a frame; otherwise wide ranges multiply the geometry and overflow the vertex buffer.
+	 */
+	private static volatile boolean frameSinceSubmit = true;
+
 	private static void draw(ClientLevel level, BlockPos playerPos, int pcx, int pcz, int range) {
-		List<OreSimulator.Hit> visible = new ArrayList<>();
-		long maxDist = (long) (range * 16 + 16) * (range * 16 + 16);
-
-		for (int dx = -range; dx <= range; dx++) {
-			for (int dz = -range; dz <= range; dz++) {
-				List<OreSimulator.Hit> hits = cache.get(OreSimulator.chunkKey(pcx + dx, pcz + dz));
-
-				if (hits == null) {
-					continue;
-				}
-
-				for (OreSimulator.Hit hit : hits) {
-					if (!config.enabledOres.contains(hit.ore()) || hit.pos().distSqr(playerPos) > maxDist) {
-						continue;
-					}
-
-					if (config.hideAir && level.isLoaded(hit.pos()) && level.getBlockState(hit.pos()).isAir()) {
-						continue; // already mined out (or carved by something we did not simulate)
-					}
-
-					visible.add(hit);
-				}
-			}
+		if (drawTicks++ % 10 == 0) {
+			visible = collectVisible(level, playerPos, pcx, pcz, range);
 		}
 
-		if (visible.size() > MAX_BOXES) {
-			visible.sort(Comparator.comparingDouble(h -> h.pos().distSqr(playerPos)));
-			visible = visible.subList(0, MAX_BOXES);
+		if (!frameSinceSubmit) {
+			return;
 		}
+
+		frameSinceSubmit = false;
 
 		for (OreSimulator.Hit hit : visible) {
 			GizmoProperties box = Gizmos.cuboid(hit.pos(), 0.002F, GizmoStyle.stroke(hit.ore().color, 2.0F));
@@ -241,6 +237,38 @@ public final class OreSimClient implements ClientModInitializer {
 				box.setAlwaysOnTop();
 			}
 		}
+	}
+
+	private static List<OreSimulator.Hit> collectVisible(ClientLevel level, BlockPos playerPos, int pcx, int pcz, int range) {
+		List<OreSimulator.Hit> result = new ArrayList<>();
+		long maxDist = (long) (range * 16 + 16) * (range * 16 + 16);
+
+		for (var entry : cache.long2ObjectEntrySet()) {
+			long key = entry.getLongKey();
+
+			if (Math.abs((int) key - pcx) > range || Math.abs((int) (key >> 32) - pcz) > range) {
+				continue;
+			}
+
+			for (OreSimulator.Hit hit : entry.getValue()) {
+				if (!config.enabledOres.contains(hit.ore()) || hit.pos().distSqr(playerPos) > maxDist) {
+					continue;
+				}
+
+				if (config.hideAir && level.isLoaded(hit.pos()) && level.getBlockState(hit.pos()).isAir()) {
+					continue; // already mined out (or carved by something we did not simulate)
+				}
+
+				result.add(hit);
+			}
+		}
+
+		if (result.size() > config.maxBoxes) {
+			result.sort(Comparator.comparingDouble(h -> h.pos().distSqr(playerPos)));
+			result = new ArrayList<>(result.subList(0, config.maxBoxes));
+		}
+
+		return result;
 	}
 
 	// ---- commands ------------------------------------------------------------------------------
@@ -283,10 +311,23 @@ public final class OreSimClient implements ClientModInitializer {
 			.then(literal("off").executes(ctx -> setEnabled(ctx, false)))
 			.then(literal("toggle").executes(ctx -> setEnabled(ctx, !config.enabled)))
 			.then(literal("range")
-				.then(argument("chunks", IntegerArgumentType.integer(1, 32)).executes(ctx -> {
+				.then(argument("chunks", IntegerArgumentType.integer(1, MAX_RANGE)).executes(ctx -> {
 					config.range = IntegerArgumentType.getInteger(ctx, "chunks");
 					config.save();
-					return feedback(ctx, "範囲を " + config.range + " チャンクにしました");
+					int loaded = ctx.getSource().getClient().options.getEffectiveRenderDistance();
+					feedback(ctx, "範囲を " + config.range + " チャンクにしました");
+
+					if (config.range > loaded) {
+						feedback(ctx, "※ 計算できるのは読み込み済みのチャンクだけです (現在の描画距離 " + loaded + " チャンク)");
+					}
+
+					return 1;
+				})))
+			.then(literal("maxboxes")
+				.then(argument("count", IntegerArgumentType.integer(100, MAX_BOXES_LIMIT)).executes(ctx -> {
+					config.maxBoxes = IntegerArgumentType.getInteger(ctx, "count");
+					config.save();
+					return feedback(ctx, "表示する箱の上限を " + config.maxBoxes + " 個にしました (近い順)");
 				})))
 			.then(literal("ore")
 				.then(argument("name", StringArgumentType.word())
@@ -342,7 +383,7 @@ public final class OreSimClient implements ClientModInitializer {
 			ores.append(config.enabledOres.contains(ore) ? "§a" : "§7").append(ore.id).append("§r ");
 		}
 
-		feedback(ctx, (config.enabled ? "有効" : "無効") + " / 範囲 " + config.range + " チャンク / シード "
+		feedback(ctx, (config.enabled ? "有効" : "無効") + " / 範囲 " + config.range + " チャンク / 表示上限 " + config.maxBoxes + " 個 / シード "
 			+ (seed.isPresent() ? seed.getAsLong() : "未設定") + (simulator == null && seed.isPresent() && config.enabled ? " (準備中)" : ""));
 		feedback(ctx, "鉱石: " + ores);
 		int total = 0;

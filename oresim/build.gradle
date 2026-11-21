@@ -53,6 +53,7 @@ loom {
 			source sourceSets.testmod
 			runDir = 'run-verify-client'
 			programArgs '--quickPlaySingleplayer', 'test'
+			vmArgs '-Doresim.check.range=5', '-Doresim.check.maxboxes=20000'
 		}
 	}
 }
