@@ -1,0 +1,42 @@
+diff --git a/src/main/java/anticope/rejects/mixin/HeightContextMixin.java b/src/main/java/anticope/rejects/mixin/HeightContextMixin.java
+index 15fb649..e43bd2f 100644
+--- a/src/main/java/anticope/rejects/mixin/HeightContextMixin.java
++++ b/src/main/java/anticope/rejects/mixin/HeightContextMixin.java
+@@ -1,22 +1,29 @@
+ package anticope.rejects.mixin;
+ 
++import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
++import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
+ import net.minecraft.world.level.chunk.ChunkGenerator;
+ import net.minecraft.world.level.levelgen.WorldGenerationContext;
+ import org.spongepowered.asm.mixin.Mixin;
+ import org.spongepowered.asm.mixin.injection.At;
+-import org.spongepowered.asm.mixin.injection.Redirect;
+ 
++/**
++ * Makes WorldGenerationContext usable with a null ChunkGenerator (OreSim builds one on the client).
++ * Uses @WrapOperation instead of @Redirect so it can stack with other mods that patch the same calls
++ * (e.g. the standalone OreSim mod), where two @Redirects on one call crash the game at startup.
++ */
+ @Mixin(WorldGenerationContext.class)
+ public abstract class HeightContextMixin {
+ 
+-    @Redirect(method = "<init>", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/chunk/ChunkGenerator;getMinY()I"))
+-    private int onMinY(ChunkGenerator instance) {
+-        return instance == null ? -9999999 : instance.getMinY();
++    @WrapOperation(method = "<init>(Lnet/minecraft/world/level/chunk/ChunkGenerator;Lnet/minecraft/world/level/LevelHeightAccessor;)V",
++            at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/chunk/ChunkGenerator;getMinY()I"))
++    private int onMinY(ChunkGenerator instance, Operation<Integer> original) {
++        return instance == null ? -9999999 : original.call(instance);
+     }
+ 
+-
+-    @Redirect(method = "<init>", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/chunk/ChunkGenerator;getGenDepth()I"))
+-    private int onHeight(ChunkGenerator instance) {
+-        return instance == null ? 100000000 : instance.getGenDepth();
++    @WrapOperation(method = "<init>(Lnet/minecraft/world/level/chunk/ChunkGenerator;Lnet/minecraft/world/level/LevelHeightAccessor;)V",
++            at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/chunk/ChunkGenerator;getGenDepth()I"))
++    private int onHeight(ChunkGenerator instance, Operation<Integer> original) {
++        return instance == null ? 100000000 : original.call(instance);
+     }
+ }
