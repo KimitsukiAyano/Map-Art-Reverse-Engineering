@@ -1,0 +1,11 @@
+{
+	"required": true,
+	"package": "com.example.simpleautofish.mixin",
+	"compatibilityLevel": "JAVA_25",
+	"client": [
+		"FishingHookAccessor"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}

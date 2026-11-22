@@ -1,0 +1,32 @@
+{
+	"schemaVersion": 1,
+	"id": "simpleautofish",
+	"version": "${version}",
+	"name": "Simple AutoFish",
+	"description": "Automatically reels in and recasts your fishing rod. Reaction time and recast delay are configurable (fixed or randomized) from Mod Menu.",
+	"authors": [
+		"simpleautofish contributors"
+	],
+	"license": "MIT",
+	"environment": "client",
+	"entrypoints": {
+		"client": [
+			"com.example.simpleautofish.SimpleAutoFish"
+		],
+		"modmenu": [
+			"com.example.simpleautofish.compat.ModMenuIntegration"
+		]
+	},
+	"mixins": [
+		"simpleautofish.mixins.json"
+	],
+	"depends": {
+		"fabricloader": ">=${loader_version}",
+		"minecraft": "~${minecraft_version}",
+		"java": ">=25",
+		"fabric-api": "*"
+	},
+	"suggests": {
+		"modmenu": "*"
+	}
+}

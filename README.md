@@ -1,5 +1,7 @@
 # rvmap
 
+> このリポジトリには、別 MOD として Minecraft 26.3 用の自動釣り MOD [`autofish/`](autofish/README.md)（Simple AutoFish）も入っています。
+
 額縁に飾られたマップアートを見つめてコマンドを打つと、その地図を
 
 - **128x128 の PNG**(`/rvmap copy`)

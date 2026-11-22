@@ -1,0 +1,35 @@
+{
+	"key.category.simpleautofish.main": "Simple AutoFish",
+	"key.simpleautofish.toggle": "自動釣り ON/OFF",
+
+	"simpleautofish.message.enabled": "自動釣り: ON",
+	"simpleautofish.message.disabled": "自動釣り: OFF",
+	"simpleautofish.message.rod_protected": "釣り竿の耐久値が残りわずかのため、自動釣りを停止しました",
+
+	"simpleautofish.config.title": "Simple AutoFish の設定",
+	"simpleautofish.config.enabled": "自動釣り",
+	"simpleautofish.config.enabled.tooltip": "ONにすると、魚が掛かったときに自動で釣り上げます。\n自分で一度キャストすれば、あとは自動で続きます。",
+	"simpleautofish.config.auto_recast": "自動再キャスト",
+	"simpleautofish.config.auto_recast.tooltip": "釣り上げたあと、自動でもう一度キャストします。\nOFFにすると釣り上げるだけになります。",
+	"simpleautofish.config.protect_rod": "釣り竿の保護",
+	"simpleautofish.config.protect_rod.tooltip": "釣り竿の耐久値が残り3以下になったら、壊れる前に自動釣りを止めます。",
+
+	"simpleautofish.config.reaction_mode": "反応時間",
+	"simpleautofish.config.recast_mode": "再キャスト時間",
+
+	"simpleautofish.mode.fixed": "固定",
+	"simpleautofish.mode.fixed.tooltip": "毎回同じ時間を使います。下のスライダーで設定します。",
+	"simpleautofish.mode.random_auto": "ランダム (おまかせ)",
+	"simpleautofish.mode.random_auto.tooltip": "人が操作しているような自然なばらつきの時間を自動で選びます。\n設定はいりません。迷ったらこれを選んでください。",
+	"simpleautofish.mode.random_range": "ランダム (範囲指定)",
+	"simpleautofish.mode.random_range.tooltip": "最小〜最大の間から毎回ランダムに選びます。",
+
+	"simpleautofish.config.reaction.fixed": "反応時間: %s ms",
+	"simpleautofish.config.reaction.min": "最小: %s ms",
+	"simpleautofish.config.reaction.max": "最大: %s ms",
+	"simpleautofish.config.recast.fixed": "再キャストまで: %s ms",
+	"simpleautofish.config.recast.min": "最小: %s ms",
+	"simpleautofish.config.recast.max": "最大: %s ms",
+	"simpleautofish.config.auto_range.reaction": "おまかせ: 約160〜650 ms で自然にばらつきます",
+	"simpleautofish.config.auto_range.recast": "おまかせ: 約450〜2200 ms で自然にばらつきます"
+}

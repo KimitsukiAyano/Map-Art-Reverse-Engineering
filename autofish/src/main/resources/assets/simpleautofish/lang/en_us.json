@@ -1,0 +1,35 @@
+{
+	"key.category.simpleautofish.main": "Simple AutoFish",
+	"key.simpleautofish.toggle": "Toggle AutoFish",
+
+	"simpleautofish.message.enabled": "AutoFish: ON",
+	"simpleautofish.message.disabled": "AutoFish: OFF",
+	"simpleautofish.message.rod_protected": "AutoFish stopped: your fishing rod is about to break",
+
+	"simpleautofish.config.title": "Simple AutoFish Settings",
+	"simpleautofish.config.enabled": "AutoFish",
+	"simpleautofish.config.enabled.tooltip": "When ON, the rod is reeled in automatically when a fish bites.\nCast once yourself and it keeps going.",
+	"simpleautofish.config.auto_recast": "Auto Recast",
+	"simpleautofish.config.auto_recast.tooltip": "Cast again automatically after reeling in.\nWhen OFF, the mod only reels in.",
+	"simpleautofish.config.protect_rod": "Protect Rod",
+	"simpleautofish.config.protect_rod.tooltip": "Stop AutoFish when the rod has 3 or less durability left, before it breaks.",
+
+	"simpleautofish.config.reaction_mode": "Reaction Time",
+	"simpleautofish.config.recast_mode": "Recast Delay",
+
+	"simpleautofish.mode.fixed": "Fixed",
+	"simpleautofish.mode.fixed.tooltip": "Always use the same delay, set with the slider below.",
+	"simpleautofish.mode.random_auto": "Random (Auto)",
+	"simpleautofish.mode.random_auto.tooltip": "Picks a natural, human-like delay every time.\nNothing to configure. Pick this if unsure.",
+	"simpleautofish.mode.random_range": "Random (Range)",
+	"simpleautofish.mode.random_range.tooltip": "Picks a random delay between the minimum and maximum every time.",
+
+	"simpleautofish.config.reaction.fixed": "Reaction Time: %s ms",
+	"simpleautofish.config.reaction.min": "Min: %s ms",
+	"simpleautofish.config.reaction.max": "Max: %s ms",
+	"simpleautofish.config.recast.fixed": "Recast Delay: %s ms",
+	"simpleautofish.config.recast.min": "Min: %s ms",
+	"simpleautofish.config.recast.max": "Max: %s ms",
+	"simpleautofish.config.auto_range.reaction": "Auto: varies naturally around 160-650 ms",
+	"simpleautofish.config.auto_range.recast": "Auto: varies naturally around 450-2200 ms"
+}
