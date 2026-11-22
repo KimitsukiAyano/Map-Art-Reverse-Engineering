@@ -37,6 +37,7 @@ public final class AutoFishConfig {
 	public boolean enabled = true;
 	public boolean autoRecast = true;
 	public boolean protectRod = true;
+	public boolean fishInScreens = false;
 
 	public TimingMode reactionMode = TimingMode.RANDOM_AUTO;
 	public int reactionFixedMs = 300;
@@ -94,6 +95,7 @@ public final class AutoFishConfig {
 		enabled = o.enabled;
 		autoRecast = o.autoRecast;
 		protectRod = o.protectRod;
+		fishInScreens = o.fishInScreens;
 		reactionMode = o.reactionMode;
 		reactionFixedMs = o.reactionFixedMs;
 		reactionMinMs = o.reactionMinMs;

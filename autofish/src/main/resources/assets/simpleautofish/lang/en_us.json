@@ -13,6 +13,8 @@
 	"simpleautofish.config.auto_recast.tooltip": "Cast again automatically after reeling in.\nWhen OFF, the mod only reels in.",
 	"simpleautofish.config.protect_rod": "Protect Rod",
 	"simpleautofish.config.protect_rod.tooltip": "Stop AutoFish when the rod has 3 or less durability left, before it breaks.",
+	"simpleautofish.config.fish_in_screens": "Fish in Menus",
+	"simpleautofish.config.fish_in_screens.tooltip": "When ON, keeps reeling in and recasting while a screen (inventory, chat, pause menu...) is open.\nWhen OFF, waits until the screen is closed, like vanilla.\nNote: the singleplayer pause menu pauses the game, so fishing stops there anyway.",
 
 	"simpleautofish.config.reaction_mode": "Reaction Time",
 	"simpleautofish.config.recast_mode": "Recast Delay",

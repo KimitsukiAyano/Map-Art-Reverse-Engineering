@@ -17,8 +17,6 @@ public final class SimpleAutoFish implements ClientModInitializer {
 	public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
 	private static KeyMapping toggleKey;
-	private final AutoFishController controller = new AutoFishController();
-
 	@Override
 	public void onInitializeClient() {
 		AutoFishConfig.get(); // load (and create) the config file early
@@ -40,6 +38,5 @@ public final class SimpleAutoFish implements ClientModInitializer {
 						cfg.enabled ? "simpleautofish.message.enabled" : "simpleautofish.message.disabled"));
 			}
 		}
-		controller.tick(mc);
 	}
 }

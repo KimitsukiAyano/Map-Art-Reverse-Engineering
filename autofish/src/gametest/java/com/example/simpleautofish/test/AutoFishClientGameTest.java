@@ -8,10 +8,14 @@ import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.inventory.InventoryScreen;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+
+import java.util.ArrayList;
+import java.util.List;
 
 public final class AutoFishClientGameTest implements FabricClientGameTest {
 	private static final int CATCH_TIMEOUT = 20 * 120;
@@ -54,9 +58,13 @@ public final class AutoFishClientGameTest implements FabricClientGameTest {
 			ctx.waitTicks(10);
 
 			// The player casts once by hand; everything after that is the mod.
+			// Record the packets of this real right click to compare the mod's clicks against.
+			PacketLog.start();
 			ctx.getInput().pressKey(o -> o.keyUse);
 			ctx.waitFor(mc -> mc.player.fishing != null, 100);
-			System.out.println("[autofish-test] cast by hand OK");
+			ctx.waitTicks(2);
+			List<String> vanilla = PacketLog.stopAndGetUseTick();
+			System.out.println("[autofish-test] cast by hand OK, packets of that tick: " + vanilla);
 
 			// Each catch: wait for the bite, then measure how long the mod takes to reel in.
 			Object[][] rounds = {
@@ -73,14 +81,46 @@ public final class AutoFishClientGameTest implements FabricClientGameTest {
 				final int target = i + 1;
 				ctx.waitFor(mc -> mc.player.fishing != null
 						&& ((FishingHookAccessor) mc.player.fishing).simpleautofish$isBiting(), CATCH_TIMEOUT);
+				PacketLog.start();
 				int reelTicks = ctx.waitFor(mc -> mc.player.fishing == null, 60);
+				ctx.waitTicks(1);
+				assertSamePackets("reel #" + target, vanilla, PacketLog.stopAndGetUseTick());
 				ctx.waitFor(mc -> fishCount(mc.player) >= target, 60);
 				System.out.println("[autofish-test] catch #" + target + " mode=" + rounds[i][0] + " fixed=" + rounds[i][1]
 						+ "ms -> reeled " + reelTicks + " ticks (~" + reelTicks * 50 + " ms) after the bite; inv: " + describe(ctx));
+				PacketLog.start();
 				int recastTicks = ctx.waitFor(mc -> mc.player.fishing != null, 20 * 6); // auto recast
+				ctx.waitTicks(2);
+				assertSamePackets("recast #" + target, vanilla, PacketLog.stopAndGetUseTick());
 				System.out.println("[autofish-test] recast #" + target + " after " + recastTicks + " ticks");
 			}
 			ctx.takeScreenshot("fishing");
+
+			// ---- open screen: OFF waits, ON keeps fishing ----
+			cfg.reactionMode = TimingMode.FIXED;
+			cfg.reactionFixedMs = 200;
+			cfg.fishInScreens = false;
+			ctx.runOnClient(mc -> mc.gui.setScreen(new InventoryScreen(mc.player)));
+			ctx.waitFor(mc -> mc.player.fishing != null
+					&& ((FishingHookAccessor) mc.player.fishing).simpleautofish$isBiting(), CATCH_TIMEOUT);
+			int held = ctx.computeOnClient(mc -> fishCount(mc.player));
+			ctx.waitFor(mc -> mc.player.fishing == null
+					|| !((FishingHookAccessor) mc.player.fishing).simpleautofish$isBiting(), 100);
+			ctx.waitTicks(10);
+			boolean stillOut = ctx.computeOnClient(mc -> mc.player.fishing != null);
+			int after = ctx.computeOnClient(mc -> fishCount(mc.player));
+			System.out.println("[autofish-test] screen open, setting OFF: rod still out=" + stillOut + ", fish " + held + " -> " + after);
+			if (!stillOut || after != held) throw new AssertionError("reeled in although a screen was open and fishInScreens=false");
+
+			cfg.fishInScreens = true;
+			ctx.waitFor(mc -> fishCount(mc.player) > after, CATCH_TIMEOUT);
+			ctx.waitFor(mc -> mc.player.fishing != null, 20 * 6);
+			boolean screenStillOpen = ctx.computeOnClient(mc -> mc.gui.screen() instanceof InventoryScreen);
+			System.out.println("[autofish-test] screen open, setting ON: caught and recast, inventory still open=" + screenStillOpen);
+			if (!screenStillOpen) throw new AssertionError("screen was closed");
+			ctx.takeScreenshot("fishing-in-inventory");
+			ctx.setScreen(() -> null);
+			cfg.fishInScreens = false;
 
 			// ---- rod protection: a nearly broken rod must not be recast ----
 			// (swapping one rod for another keeps the bobber out, so empty the hand first)
@@ -104,6 +144,16 @@ public final class AutoFishClientGameTest implements FabricClientGameTest {
 			}
 			System.out.println("[autofish-test] ALL OK");
 		}
+	}
+
+	/** The mod's click must produce the same packets, in the same order, in one client tick, as a real one. */
+	private static void assertSamePackets(String what, List<String> vanilla, List<String> mod) {
+		System.out.println("[autofish-test]   " + what + " packets of that tick: " + mod);
+		List<String> a = new ArrayList<>(vanilla), b = new ArrayList<>(mod);
+		// Movement packets depend on whether the player moved/turned that tick, not on the click.
+		a.removeIf(n -> n.startsWith("ServerboundMovePlayerPacket"));
+		b.removeIf(n -> n.startsWith("ServerboundMovePlayerPacket"));
+		if (!a.equals(b)) throw new AssertionError(what + ": packets differ from a vanilla right click: " + mod + " vs " + vanilla);
 	}
 
 	private static int fishCount(LocalPlayer player) {

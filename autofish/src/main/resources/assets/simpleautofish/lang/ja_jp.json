@@ -13,6 +13,8 @@
 	"simpleautofish.config.auto_recast.tooltip": "釣り上げたあと、自動でもう一度キャストします。\nOFFにすると釣り上げるだけになります。",
 	"simpleautofish.config.protect_rod": "釣り竿の保護",
 	"simpleautofish.config.protect_rod.tooltip": "釣り竿の耐久値が残り3以下になったら、壊れる前に自動釣りを止めます。",
+	"simpleautofish.config.fish_in_screens": "画面を開いていても釣る",
+	"simpleautofish.config.fish_in_screens.tooltip": "ONにすると、インベントリやチャット、ESCメニューなどの画面を開いている間も釣り上げ・再キャストを続けます。\nOFFだとバニラと同じく、画面を閉じるまで待ちます。\n※シングルプレイのESCメニューはゲーム自体が一時停止するので釣りも止まります。",
 
 	"simpleautofish.config.reaction_mode": "反応時間",
 	"simpleautofish.config.recast_mode": "再キャスト時間",

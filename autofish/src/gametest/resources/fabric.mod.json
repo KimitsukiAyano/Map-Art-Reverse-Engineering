@@ -7,5 +7,8 @@
 		"fabric-client-gametest": [
 			"com.example.simpleautofish.test.AutoFishClientGameTest"
 		]
-	}
+	},
+	"mixins": [
+		"simpleautofish-test.mixins.json"
+	]
 }

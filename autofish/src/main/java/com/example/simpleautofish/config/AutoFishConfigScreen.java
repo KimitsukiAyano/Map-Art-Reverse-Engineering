@@ -39,7 +39,9 @@ public final class AutoFishConfigScreen extends Screen {
 		rows.addChild(pair(
 				toggle("simpleautofish.config.enabled", HALF, work.enabled, v -> work.enabled = v),
 				toggle("simpleautofish.config.auto_recast", HALF, work.autoRecast, v -> work.autoRecast = v)));
-		rows.addChild(toggle("simpleautofish.config.protect_rod", FULL, work.protectRod, v -> work.protectRod = v));
+		rows.addChild(pair(
+				toggle("simpleautofish.config.protect_rod", HALF, work.protectRod, v -> work.protectRod = v),
+				toggle("simpleautofish.config.fish_in_screens", HALF, work.fishInScreens, v -> work.fishInScreens = v)));
 
 		// ---- reaction time ----
 		rows.addChild(modeButton("simpleautofish.config.reaction_mode", () -> work.reactionMode, m -> work.reactionMode = m));

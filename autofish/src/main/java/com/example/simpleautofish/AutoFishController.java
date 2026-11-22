@@ -2,12 +2,12 @@ package com.example.simpleautofish;
 
 import com.example.simpleautofish.config.AutoFishConfig;
 import com.example.simpleautofish.mixin.FishingHookAccessor;
+import com.example.simpleautofish.mixin.MinecraftAccessor;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.Util;
 import net.minecraft.world.InteractionHand;
-import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.projectile.FishingHook;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -20,8 +20,14 @@ import net.minecraft.world.item.Items;
  *   reel in --> RECAST_PENDING --(recast delay elapsed)--> cast --> WATCHING
  * </pre>
  * The mod only reels and recasts a rod the player already cast; it never starts fishing on its own.
+ * <p>
+ * {@link #tick} is called from {@code MinecraftMixin} at the point of the client tick where vanilla handles the
+ * use key, and every click goes through vanilla's own {@code Minecraft#startUseItem}, so the packets sent are
+ * exactly those of a real right click.
  */
-final class AutoFishController {
+public final class AutoFishController {
+	public static final AutoFishController INSTANCE = new AutoFishController();
+
 	/** Minimum durability left before rod protection stops the mod. */
 	private static final int PROTECT_DURABILITY = 3;
 	/** Give up recasting if the old bobber has not disappeared after this long. */
@@ -34,7 +40,10 @@ final class AutoFishController {
 	private long deadline;
 	private InteractionHand hand;
 
-	void tick(Minecraft mc) {
+	private AutoFishController() {
+	}
+
+	public void tick(Minecraft mc) {
 		LocalPlayer player = mc.player;
 		AutoFishConfig cfg = AutoFishConfig.get();
 		if (player == null || mc.level == null || mc.gameMode == null || !cfg.enabled || player.isSpectator()) {
@@ -55,7 +64,7 @@ final class AutoFishController {
 			}
 			case REEL_PENDING -> {
 				FishingHook hook = player.fishing;
-				if (hook == null || !isRod(player.getItemInHand(hand))) {
+				if (hook == null || rodHand(player) != hand) {
 					state = State.WATCHING; // reeled in by hand, or rod switched away
 					return;
 				}
@@ -63,10 +72,10 @@ final class AutoFishController {
 					state = State.WATCHING; // the fish escaped before we reacted; keep waiting
 					return;
 				}
-				if (now < actionAt || mc.gui.screen() != null) {
+				if (now < actionAt || !canClick(mc, player, cfg)) {
 					return;
 				}
-				useRod(mc, player, hand);
+				click(mc);
 				if (cfg.autoRecast) {
 					actionAt = now + cfg.nextRecastMs();
 					deadline = actionAt + RECAST_TIMEOUT_MS;
@@ -80,12 +89,12 @@ final class AutoFishController {
 					state = State.WATCHING;
 					return;
 				}
-				// Wait for the delay, for the old bobber to be gone and for any open GUI to close.
-				if (now < actionAt || player.fishing != null || mc.gui.screen() != null) {
+				// Wait for the delay, for the old bobber to be gone and (unless allowed) for any open screen to close.
+				if (now < actionAt || player.fishing != null || !canClick(mc, player, cfg)) {
 					return;
 				}
 				ItemStack rod = player.getItemInHand(hand);
-				if (!isRod(rod)) {
+				if (!isRod(rod) || rodHand(player) != hand) {
 					state = State.WATCHING;
 					return;
 				}
@@ -97,28 +106,36 @@ final class AutoFishController {
 					state = State.WATCHING;
 					return;
 				}
-				useRod(mc, player, hand);
+				click(mc);
 				state = State.WATCHING;
 			}
 		}
 	}
 
-	/** Same as a normal right click with the item (Minecraft#startUseItem, item branch). */
-	private static void useRod(Minecraft mc, LocalPlayer player, InteractionHand hand) {
-		ItemStack stack = player.getItemInHand(hand);
-		InteractionResult result = mc.gameMode.useItem(player, hand);
-		if (result instanceof InteractionResult.Success success) {
-			if (success.swingSource() == InteractionResult.SwingSource.PREDICTED) {
-				player.swing(hand, stack.getInteractAnimation(), false);
-			}
-			player.itemUsed(hand);
-		}
+	/** A real right click: vanilla's own use-key handler, including block/entity interaction and the swing. */
+	private static void click(Minecraft mc) {
+		((MinecraftAccessor) mc).simpleautofish$startUseItem();
 	}
 
-	/** The hand vanilla would use the rod from (main hand first), or null. */
+	/**
+	 * Whether a right click may be done now. Without a screen this mirrors {@code handleKeybinds()}, which does
+	 * not call {@code startUseItem()} while an item is being used (eating, drawing a bow...).
+	 */
+	private static boolean canClick(Minecraft mc, LocalPlayer player, AutoFishConfig cfg) {
+		if (mc.gui.screen() != null && !cfg.fishInScreens) {
+			return false;
+		}
+		return !player.isUsingItem();
+	}
+
+	/**
+	 * The hand holding the rod, but only when a vanilla right click would actually use the rod: vanilla tries
+	 * the main hand first, so with the rod in the off hand the main hand must be empty (otherwise the click
+	 * could, for example, place the block held in the main hand).
+	 */
 	private static InteractionHand rodHand(LocalPlayer player) {
 		if (isRod(player.getMainHandItem())) return InteractionHand.MAIN_HAND;
-		if (isRod(player.getOffhandItem())) return InteractionHand.OFF_HAND;
+		if (player.getMainHandItem().isEmpty() && isRod(player.getOffhandItem())) return InteractionHand.OFF_HAND;
 		return null;
 	}
 
